@@ -1,11 +1,8 @@
 """Zone file parsing for cleanup must tolerate missing on-disk SOA (common for dynamic zones)."""
 
-import tempfile
 from pathlib import Path
 
-import dns.name
-
-from bind_key_api.zone_cleanup import _collect_owners_for_key
+from bind_key_api.zone_cleanup import _collect_owners_for_key, _rndc_zone_cmd
 
 
 def test_collect_owners_without_soa_at_origin(tmp_path: Path) -> None:
@@ -21,3 +18,18 @@ def test_collect_owners_without_soa_at_origin(tmp_path: Path) -> None:
     owners = _collect_owners_for_key(zf, "dyn.example", "client._update.dyn.example")
     texts = {n.to_text() for n in owners}
     assert "client._update.dyn.example." in texts
+
+
+def test_rndc_freeze_cmd_optional_view() -> None:
+    assert _rndc_zone_cmd(Path("/usr/sbin/rndc"), [], "freeze", "dyn.example.com", None) == [
+        "/usr/sbin/rndc",
+        "freeze",
+        "dyn.example.com",
+    ]
+    assert _rndc_zone_cmd(Path("/usr/sbin/rndc"), [], "thaw", "dyn.example.com", "internal") == [
+        "/usr/sbin/rndc",
+        "thaw",
+        "dyn.example.com",
+        "in",
+        "internal",
+    ]

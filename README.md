@@ -47,6 +47,10 @@ Environment variables use the prefix **`BIND_KEY_API_`**. The important ones:
 
 Additional options (timeouts, `named` PID file for SIGHUP fallback, view name for `rndc freeze`, etc.) are documented on the **Settings** model in `bind_key_api/settings.py`. A fuller commented example lives in `deploy/bind-key-api.env.example`.
 
+### Zone cleanup: journal vs zone file
+
+Names added only via **dynamic update** often live in the **journal** (`.jnl`) until BIND merges them. Cleanup enumerates names from the **zone master file** after an optional **`rndc freeze`** (default **on** via `BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP`), which merges the journal so names like `api.agonzalez.…` are visible. If **`rndc freeze`** fails in a **multi-view** setup, set **`BIND_KEY_API_ZONE_VIEW`** to the view that contains the zone.
+
 ### Zone cleanup (`nsupdate`) and `NOTAUTH`
 
 If DELETE returns **`zone cleanup failed: nsupdate failed: … NOTAUTH`**, BIND rejected the dynamic update. Typical causes:

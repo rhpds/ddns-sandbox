@@ -78,10 +78,13 @@ class Settings(BaseSettings):
         description="BIND view containing the zone (for rndc freeze/thaw if enabled).",
     )
     freeze_zone_before_cleanup: bool = Field(
-        default=False,
+        default=True,
         description=(
-            "Run rndc freeze/thaw so the journal is merged into the zone file before "
-            "enumerating names (needed if some RRs exist only in the journal)."
+            "Run rndc freeze/thaw so the dynamic journal is merged into the zone file "
+            "before enumerating names to delete. Without this, names added only via "
+            "nsupdate (journal) are often missing from the file and will not be removed. "
+            "Set false only if the zone is static or you use another cleanup path. "
+            "Multi-view: set BIND_KEY_API_ZONE_VIEW if freeze without view fails."
         ),
     )
 

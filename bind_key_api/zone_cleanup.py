@@ -35,6 +35,20 @@ def _sort_deepest_first(names: list[dns.name.Name]) -> list[dns.name.Name]:
     return sorted(names, key=lambda n: len(n.labels), reverse=True)
 
 
+def _rndc_zone_cmd(
+    rndc_path: Path,
+    rndc_extra_args: list[str],
+    subcommand: str,
+    zone_name: str,
+    zone_view: str | None,
+) -> list[str]:
+    """Build `rndc freeze|thaw <zone> [in <view>]` — view optional for single-view setups."""
+    cmd = [str(rndc_path), *rndc_extra_args, subcommand, zone_name]
+    if zone_view:
+        cmd.extend(["in", zone_view])
+    return cmd
+
+
 def _collect_owners_for_key(zone_path: Path, zone_origin: str, key_fqdn: str) -> list[dns.name.Name]:
     """Return all zone node names that are the key name or a subdomain of it."""
     origin = dns.name.from_text(zone_origin)
@@ -75,8 +89,8 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
     Run nsupdate to delete ANY rrsets at names under this key (selfsub-style).
     Must be called while the key is still present in named's key file.
 
-    Limitations: only names present in zone_file are seen. Dynamic-only RRs that
-    exist only in the journal are missed unless journal is merged (rndc freeze).
+    With freeze_zone_before, the journal is merged first so names from dynamic updates
+    are visible in the zone file. Without freeze, only on-disk content is enumerated.
     """
     zf = params.zone_file
     if not zf.is_file():
@@ -84,17 +98,16 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
 
     froze = False
     try:
-        if params.freeze_zone_before and params.zone_view:
+        if params.freeze_zone_before:
             try:
                 subprocess.run(
-                    [
-                        str(params.rndc_path),
-                        *params.rndc_extra_args,
+                    _rndc_zone_cmd(
+                        params.rndc_path,
+                        params.rndc_extra_args,
                         "freeze",
                         params.zone_name,
-                        "in",
                         params.zone_view,
-                    ],
+                    ),
                     check=True,
                     capture_output=True,
                     text=True,
@@ -152,17 +165,16 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             except OSError:
                 pass
     finally:
-        if froze and params.zone_view:
+        if froze:
             try:
                 subprocess.run(
-                    [
-                        str(params.rndc_path),
-                        *params.rndc_extra_args,
+                    _rndc_zone_cmd(
+                        params.rndc_path,
+                        params.rndc_extra_args,
                         "thaw",
                         params.zone_name,
-                        "in",
                         params.zone_view,
-                    ],
+                    ),
                     check=False,
                     capture_output=True,
                     text=True,
