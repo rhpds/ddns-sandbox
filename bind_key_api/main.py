@@ -135,6 +135,7 @@ def create_app() -> FastAPI:
             zone_cleanup = ZoneCleanupParams(
                 zone_name=settings.zone_name,
                 zone_file=settings.zone_file_path,
+                nsupdate_path=settings.nsupdate_path,
                 nsupdate_server=settings.nsupdate_server,
                 nsupdate_port=settings.nsupdate_port,
                 timeout_sec=settings.rndc_timeout_sec,

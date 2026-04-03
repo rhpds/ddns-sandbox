@@ -41,6 +41,7 @@ Environment variables use the prefix **`BIND_KEY_API_`**. The important ones:
 | `BIND_KEY_API_RNDC_EXTRA_ARGS` | Extra `rndc` arguments, often `["-k","/etc/bind/rndc.key"]` as JSON or shell-style. |
 | `BIND_KEY_API_ZONE_FILE_PATH` | Zone master file, used if you enable RRset cleanup on delete. |
 | `BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE` | If `true`, DELETE may remove names in the zone that match the TSIG key name (and subdomains). Set `false` for tests or if you manage the zone elsewhere. |
+| `BIND_KEY_API_NSUPDATE_PATH` | Full path to `nsupdate` (default `/usr/bin/nsupdate`). On RHEL/Fedora use `/usr/sbin/nsupdate` if needed. |
 
 Additional options (timeouts, `named` PID file for SIGHUP fallback, view name for `rndc freeze`, etc.) are documented on the **Settings** model in `bind_key_api/settings.py`. A fuller commented example lives in `deploy/bind-key-api.env.example`.
 

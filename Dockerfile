@@ -6,7 +6,8 @@ FROM python:3.12-slim-bookworm AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bind9-utils \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && test -x /usr/bin/nsupdate
 
 WORKDIR /app
 
@@ -17,7 +18,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir .
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    BIND_KEY_API_NSUPDATE_PATH=/usr/bin/nsupdate
 
 EXPOSE 8080
 

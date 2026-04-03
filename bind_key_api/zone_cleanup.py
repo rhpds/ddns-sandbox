@@ -21,6 +21,7 @@ class ZoneCleanupError(RuntimeError):
 class ZoneCleanupParams:
     zone_name: str
     zone_file: Path
+    nsupdate_path: Path
     nsupdate_server: str
     nsupdate_port: int
     timeout_sec: float
@@ -123,13 +124,19 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             kpath = Path(tf.name)
         try:
             _write_tsig_keyfile(kpath, tk)
-            proc = subprocess.run(
-                ["nsupdate", "-k", str(kpath)],
-                input=script,
-                text=True,
-                capture_output=True,
-                timeout=params.timeout_sec,
-            )
+            try:
+                proc = subprocess.run(
+                    [str(params.nsupdate_path), "-k", str(kpath)],
+                    input=script,
+                    text=True,
+                    capture_output=True,
+                    timeout=params.timeout_sec,
+                )
+            except FileNotFoundError as e:
+                raise ZoneCleanupError(
+                    f"nsupdate not found at {params.nsupdate_path} "
+                    f"(install bind9-utils / bind-utils, or set BIND_KEY_API_NSUPDATE_PATH)"
+                ) from e
             if proc.returncode != 0:
                 msg = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
                 raise ZoneCleanupError(f"nsupdate failed: {msg}")

@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     )
     nsupdate_server: str = Field(default="127.0.0.1")
     nsupdate_port: int = Field(default=53, ge=1, le=65535)
+    nsupdate_path: Path = Field(
+        default=Path("/usr/bin/nsupdate"),
+        description=(
+            "Path to nsupdate (bind9-utils). Debian/Ubuntu: /usr/bin/nsupdate; "
+            "RHEL/Fedora: often /usr/sbin/nsupdate."
+        ),
+    )
     zone_view: str | None = Field(
         default="ddnsinternal",
         description="BIND view containing the zone (for rndc freeze/thaw if enabled).",
