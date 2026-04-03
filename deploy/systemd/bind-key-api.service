@@ -1,0 +1,22 @@
+[Unit]
+Description=BIND TSIG key management HTTP API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=__INSTALL_ROOT__
+
+EnvironmentFile=-__ENV_FILE__
+
+ExecStart=__INSTALL_ROOT__/run.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

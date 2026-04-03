@@ -1,0 +1,26 @@
+# Podman:  podman compose up --build
+# Docker: docker compose up --build
+#
+# Copy .env.example -> .env and set BIND_KEY_API_AUTH_TOKEN first.
+# Uses host network so rndc reaches named on 127.0.0.1:953. Adjust volume paths for your host.
+
+services:
+  bind-key-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      BIND_KEY_API_BIND_KEYS_PATH: /etc/bind/keys/ddns.example.com.key
+      BIND_KEY_API_RNDC_EXTRA_ARGS: '["-k","/etc/bind/rndc.key"]'
+      BIND_KEY_API_ZONE_FILE_PATH: /etc/bind/db.ddns.example.com
+      UVICORN_HOST: 127.0.0.1
+      UVICORN_PORT: "8080"
+    volumes:
+      - /etc/bind/keys:/etc/bind/keys
+      - /etc/bind/rndc.key:/etc/bind/rndc.key:ro
+      - /etc/bind/db.ddns.example.com:/etc/bind/db.ddns.example.com
+      - /run/named:/run/named
+    restart: unless-stopped
