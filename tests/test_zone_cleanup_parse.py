@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from bind_key_api.zone_cleanup import _collect_owners_for_key, _rndc_zone_cmd
+from bind_key_api.zone_cleanup import (
+    _collect_owners_for_key,
+    _fqdn_node_name,
+    _rndc_zone_cmd,
+)
 
 
 def test_collect_owners_without_soa_at_origin(tmp_path: Path) -> None:
@@ -15,9 +19,23 @@ def test_collect_owners_without_soa_at_origin(tmp_path: Path) -> None:
         "client._update 3600 IN A 192.0.2.1\n",
         encoding="utf-8",
     )
-    owners = _collect_owners_for_key(zf, "dyn.example", "client._update.dyn.example")
+    owners = _collect_owners_for_key(
+        zf,
+        "dyn.example",
+        "client._update.dyn.example",
+        axfr_zone=None,
+    )
     texts = {n.to_text() for n in owners}
     assert "client._update.dyn.example." in texts
+
+
+def test_fqdn_node_name_expands_relative_owner() -> None:
+    import dns.name
+
+    origin = dns.name.from_text("dyn.example")
+    rel = dns.name.from_text("api.client", None)  # type: ignore[arg-type]
+    fq = _fqdn_node_name(rel, origin)
+    assert fq.to_text() == "api.client.dyn.example."
 
 
 def test_rndc_freeze_cmd_optional_view() -> None:

@@ -23,7 +23,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    BIND_KEY_API_NSUPDATE_PATH=/usr/local/bin/nsupdate
+    BIND_KEY_API_NSUPDATE_PATH=/usr/local/bin/nsupdate \
+    BIND_KEY_API_DIG_PATH=/usr/bin/dig
 
 EXPOSE 8080
 

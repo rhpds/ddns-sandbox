@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ class ZoneCleanupParams:
     rndc_extra_args: list[str]
     zone_view: str | None
     freeze_zone_before: bool
+    enumerate_via_axfr: bool
+    dig_path: Path
 
 
 def _sort_deepest_first(names: list[dns.name.Name]) -> list[dns.name.Name]:
@@ -49,14 +52,83 @@ def _rndc_zone_cmd(
     return cmd
 
 
-def _collect_owners_for_key(zone_path: Path, zone_origin: str, key_fqdn: str) -> list[dns.name.Name]:
-    """Return all zone node names that are the key name or a subdomain of it."""
+def _fqdn_node_name(name: dns.name.Name, zone_origin: dns.name.Name) -> dns.name.Name:
+    """Make zone node names comparable: relative owners must be expanded to the zone apex."""
+    if name.is_absolute():
+        return name
+    return name.derelativize(zone_origin)
+
+
+def _names_matching_key(
+    z: dns.zone.Zone,
+    zone_origin: dns.name.Name,
+    keyn: dns.name.Name,
+) -> list[dns.name.Name]:
+    out: list[dns.name.Name] = []
+    for name in z.nodes.keys():  # type: ignore[attr-defined]
+        fq = _fqdn_node_name(name, zone_origin)
+        if fq == keyn or fq.is_subdomain(keyn):
+            out.append(fq)
+    return out
+
+
+def _zone_from_axfr(
+    *,
+    dig_path: Path,
+    zone_name: str,
+    server: str,
+    port: int,
+    keyfile: Path,
+    origin: dns.name.Name,
+    timeout_sec: float,
+) -> dns.zone.Zone | None:
+    """Best-effort AXFR using the same TSIG key as nsupdate (needs allow-transfer)."""
+    cmd = [
+        str(dig_path),
+        "+tcp",
+        "+nocmd",
+        "-k",
+        str(keyfile),
+        f"@{server}",
+        "-p",
+        str(port),
+        zone_name,
+        "axfr",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return dns.zone.from_text(
+            io.StringIO(proc.stdout),
+            origin=origin,
+            relativize=False,
+            check_origin=False,
+        )
+    except Exception:
+        return None
+
+
+def _collect_owners_for_key(
+    zone_path: Path,
+    zone_origin: str,
+    key_fqdn: str,
+    *,
+    axfr_zone: dns.zone.Zone | None,
+) -> list[dns.name.Name]:
+    """Return distinct FQDNs under this TSIG key from the zone file and optional AXFR."""
     origin = dns.name.from_text(zone_origin)
     keyn = dns.name.from_text(key_fqdn)
     try:
-        # Dynamic zones often have no SOA in the on-disk file until `rndc freeze` merges
-        # the journal; we only need node names for cleanup, not a full zone audit.
-        z = dns.zone.from_file(
+        z_file = dns.zone.from_file(
             str(zone_path),
             origin=origin,
             relativize=False,
@@ -65,10 +137,14 @@ def _collect_owners_for_key(zone_path: Path, zone_origin: str, key_fqdn: str) ->
     except Exception as e:
         raise ZoneCleanupError(f"cannot parse zone file {zone_path}: {e}") from e
 
-    out: list[dns.name.Name] = []
-    for name in z.nodes.keys():  # type: ignore[attr-defined]
-        if name == keyn or name.is_subdomain(keyn):
-            out.append(name)
+    merged: dict[str, dns.name.Name] = {}
+    for z in (z_file, axfr_zone):
+        if z is None:
+            continue
+        for n in _names_matching_key(z, origin, keyn):
+            merged[n.to_text()] = n
+
+    out = list(merged.values())
     if not out:
         out.append(keyn)
     return _sort_deepest_first(out)
@@ -117,17 +193,6 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 raise ZoneCleanupError(f"rndc freeze failed: {e}") from e
 
-        owners = _collect_owners_for_key(zf, params.zone_name, tk.name)
-
-        lines = [
-            f"server {params.nsupdate_server} {params.nsupdate_port}",
-            f"zone {params.zone_name}",
-        ]
-        for n in owners:
-            lines.append(f"update delete {n.to_text()} ANY")
-        lines.append("send")
-        script = "\n".join(lines) + "\n"
-
         with tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".key",
@@ -137,6 +202,36 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             kpath = Path(tf.name)
         try:
             _write_tsig_keyfile(kpath, tk)
+
+            axfr_zone: dns.zone.Zone | None = None
+            if params.enumerate_via_axfr:
+                origin = dns.name.from_text(params.zone_name)
+                axfr_zone = _zone_from_axfr(
+                    dig_path=params.dig_path,
+                    zone_name=params.zone_name,
+                    server=params.nsupdate_server,
+                    port=params.nsupdate_port,
+                    keyfile=kpath,
+                    origin=origin,
+                    timeout_sec=params.timeout_sec,
+                )
+
+            owners = _collect_owners_for_key(
+                zf,
+                params.zone_name,
+                tk.name,
+                axfr_zone=axfr_zone,
+            )
+
+            lines = [
+                f"server {params.nsupdate_server} {params.nsupdate_port}",
+                f"zone {params.zone_name}",
+            ]
+            for n in owners:
+                lines.append(f"update delete {n.to_text()} ANY")
+            lines.append("send")
+            script = "\n".join(lines) + "\n"
+
             try:
                 proc = subprocess.run(
                     [str(params.nsupdate_path), "-k", str(kpath)],

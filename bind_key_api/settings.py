@@ -87,6 +87,19 @@ class Settings(BaseSettings):
             "Multi-view: set BIND_KEY_API_ZONE_VIEW if freeze without view fails."
         ),
     )
+    zone_cleanup_enumerate_via_axfr: bool = Field(
+        default=True,
+        description=(
+            "Also list names via `dig … axfr` with the TSIG key (same server/port as nsupdate). "
+            "Catches RRs the on-disk file still does not show after freeze. Requires "
+            "allow-transfer for this key (often already true if the key updates the zone). "
+            "Set false if AXFR is denied and you rely on the zone file only."
+        ),
+    )
+    dig_path: Path = Field(
+        default=Path("/usr/bin/dig"),
+        description="Path to `dig` (bind9-dnsutils / bind-utils) for optional AXFR enumeration.",
+    )
 
     @field_validator("named_pid_path", mode="before")
     @classmethod
