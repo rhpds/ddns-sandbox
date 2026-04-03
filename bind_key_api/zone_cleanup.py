@@ -63,6 +63,26 @@ def _rndc_zone_cmd(
     return cmd
 
 
+def _rndc_thaw_zone(params: ZoneCleanupParams) -> None:
+    """Best-effort thaw (matches cleanup finally behavior)."""
+    try:
+        subprocess.run(
+            _rndc_zone_cmd(
+                params.rndc_path,
+                params.rndc_extra_args,
+                "thaw",
+                params.zone_name,
+                params.zone_view,
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=params.timeout_sec,
+        )
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def _fqdn_node_name(name: dns.name.Name, zone_origin: dns.name.Name) -> dns.name.Name:
     """Make zone node names comparable: relative owners must be expanded to the zone apex."""
     if name.is_absolute():
@@ -244,6 +264,11 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                     axfr_zone=axfr_zone,
                 )
 
+            # Freeze disables dynamic updates; nsupdate must run after thaw.
+            if froze:
+                _rndc_thaw_zone(params)
+                froze = False
+
             lines = [
                 f"server {params.nsupdate_server} {params.nsupdate_port}",
                 f"zone {params.zone_name}",
@@ -269,10 +294,18 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             if proc.returncode != 0:
                 msg = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
                 err = f"nsupdate failed: {msg}"
-                if "NOTAUTH" in msg.upper():
+                umsg = msg.upper()
+                if "NOTAUTH" in umsg:
                     err += (
                         " (confirm BIND_KEY_API_ZONE_NAME matches named.conf; TSIG and update-policy; "
                         "BIND_KEY_API_NSUPDATE_SERVER reaches the primary.)"
+                    )
+                elif "FROZEN" in umsg or (
+                    "REFUSED" in umsg and "frozen" in msg.lower()
+                ):
+                    err += (
+                        " (zone was frozen: cleanup thaws before nsupdate in current versions; "
+                        "if you still see this, run rndc thaw manually and retry.)"
                     )
                 raise ZoneCleanupError(err)
         finally:
@@ -282,19 +315,4 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                 pass
     finally:
         if froze:
-            try:
-                subprocess.run(
-                    _rndc_zone_cmd(
-                        params.rndc_path,
-                        params.rndc_extra_args,
-                        "thaw",
-                        params.zone_name,
-                        params.zone_view,
-                    ),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=params.timeout_sec,
-                )
-            except subprocess.TimeoutExpired:
-                pass
+            _rndc_thaw_zone(params)

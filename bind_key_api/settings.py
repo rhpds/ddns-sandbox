@@ -88,11 +88,11 @@ class Settings(BaseSettings):
     freeze_zone_before_cleanup: bool = Field(
         default=True,
         description=(
-            "Attempt rndc freeze/thaw so the dynamic journal is merged into the zone file "
-            "before enumerating names to delete. If freeze fails (non-dynamic zone, wrong "
-            "view, etc.), cleanup continues anyway — AXFR still lists live RRs. "
+            "Attempt rndc freeze so the journal is merged into the zone file before enumerating "
+            "names; the zone is thawed again before nsupdate (frozen zones reject dynamic updates). "
+            "If freeze fails, cleanup continues — AXFR may still list live RRs. "
             "Multi-view: set BIND_KEY_API_ZONE_VIEW. Set BIND_KEY_API_FREEZE_ZONE_STRICT=true "
-            "to fail the request when freeze returns non-zero."
+            "to fail when freeze returns non-zero."
         ),
     )
     freeze_zone_strict: bool = Field(
