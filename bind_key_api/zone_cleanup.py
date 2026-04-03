@@ -3,7 +3,8 @@
 Zone cleanup **only** uses `nsupdate` to remove data: each `update delete <owner> ANY` is one
 dynamic update. There is no BIND API to say “delete every RR this TSIG key created” in one
 packet — you must name each owner (apex and/or children). This module either **enumerates**
-owners (zone file + optional AXFR + optional freeze) or, in **nsupdate_key_only** mode, deletes
+owners (AXFR first when enabled — skip freeze if AXFR succeeds; else zone file + optional freeze)
+or, in **nsupdate_key_only** mode, deletes
 **only** RRsets at the TSIG key name itself (not subdomains like api.client.key…).
 """
 
@@ -13,6 +14,7 @@ import io
 import logging
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,8 +66,8 @@ def _rndc_zone_cmd(
     return cmd
 
 
-def _rndc_thaw_zone(params: ZoneCleanupParams) -> None:
-    """Best-effort thaw (matches cleanup finally behavior)."""
+def _rndc_thaw_zone_best_effort(params: ZoneCleanupParams) -> None:
+    """Thaw after cleanup errors; failures are ignored so we do not mask the original error."""
     try:
         subprocess.run(
             _rndc_zone_cmd(
@@ -82,6 +84,34 @@ def _rndc_thaw_zone(params: ZoneCleanupParams) -> None:
         )
     except subprocess.TimeoutExpired:
         pass
+
+
+def _rndc_thaw_zone_required(params: ZoneCleanupParams) -> None:
+    """Thaw before nsupdate; must succeed — zone stays frozen until dynamic updates work again."""
+    try:
+        proc = subprocess.run(
+            _rndc_zone_cmd(
+                params.rndc_path,
+                params.rndc_extra_args,
+                "thaw",
+                params.zone_name,
+                params.zone_view,
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=params.timeout_sec,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise ZoneCleanupError(f"rndc thaw timed out: {e}") from e
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+        raise ZoneCleanupError(
+            f"rndc thaw failed (zone still frozen; nsupdate would be REFUSED): {err}. "
+            "Check BIND_KEY_API_RNDC_PATH / RNDC_EXTRA_ARGS / ZONE_VIEW."
+        )
+    # Brief pause so named finishes re-enabling dynamic updates before nsupdate.
+    time.sleep(0.15)
 
 
 def _fqdn_node_name(name: dns.name.Name, zone_origin: dns.name.Name) -> dns.name.Name:
@@ -206,33 +236,6 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             raise ZoneCleanupError(
                 f"zone file not found: {zf!r}" if zf is not None else "zone file path not set"
             )
-        if params.freeze_zone_before:
-            try:
-                proc = subprocess.run(
-                    _rndc_zone_cmd(
-                        params.rndc_path,
-                        params.rndc_extra_args,
-                        "freeze",
-                        params.zone_name,
-                        params.zone_view,
-                    ),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=params.timeout_sec,
-                )
-            except subprocess.TimeoutExpired as e:
-                raise ZoneCleanupError(f"rndc freeze timed out: {e}") from e
-            if proc.returncode == 0:
-                froze = True
-            elif params.freeze_zone_strict:
-                err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
-                raise ZoneCleanupError(
-                    f"rndc freeze failed: {err}. "
-                    "Set BIND_KEY_API_ZONE_VIEW if the zone is in a view, "
-                    "or set BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP=false / "
-                    "BIND_KEY_API_FREEZE_ZONE_STRICT=false."
-                )
 
     try:
         with tempfile.NamedTemporaryFile(
@@ -265,6 +268,40 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                             "will be skipped — allow-transfer for this TSIG or fix "
                             "BIND_KEY_API_ZONE_FILE_PATH."
                         )
+
+                # Freeze only when we need a merged on-disk file: not when AXFR already gave a
+                # live copy (freeze blocks dynamic updates and caused nsupdate REFUSED if thaw raced).
+                should_freeze = params.freeze_zone_before and (
+                    not params.enumerate_via_axfr or axfr_zone is None
+                )
+                if should_freeze:
+                    try:
+                        proc = subprocess.run(
+                            _rndc_zone_cmd(
+                                params.rndc_path,
+                                params.rndc_extra_args,
+                                "freeze",
+                                params.zone_name,
+                                params.zone_view,
+                            ),
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=params.timeout_sec,
+                        )
+                    except subprocess.TimeoutExpired as e:
+                        raise ZoneCleanupError(f"rndc freeze timed out: {e}") from e
+                    if proc.returncode == 0:
+                        froze = True
+                    elif params.freeze_zone_strict:
+                        err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+                        raise ZoneCleanupError(
+                            f"rndc freeze failed: {err}. "
+                            "Set BIND_KEY_API_ZONE_VIEW if the zone is in a view, "
+                            "or set BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP=false / "
+                            "BIND_KEY_API_FREEZE_ZONE_STRICT=false."
+                        )
+
                 owners = _collect_owners_for_key(
                     zf,
                     params.zone_name,
@@ -272,9 +309,8 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                     axfr_zone=axfr_zone,
                 )
 
-            # Freeze disables dynamic updates; nsupdate must run after thaw.
             if froze:
-                _rndc_thaw_zone(params)
+                _rndc_thaw_zone_required(params)
                 froze = False
 
             lines = [
@@ -323,4 +359,4 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                 pass
     finally:
         if froze:
-            _rndc_thaw_zone(params)
+            _rndc_thaw_zone_best_effort(params)

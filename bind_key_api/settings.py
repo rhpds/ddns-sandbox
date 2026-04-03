@@ -88,9 +88,9 @@ class Settings(BaseSettings):
     freeze_zone_before_cleanup: bool = Field(
         default=True,
         description=(
-            "Attempt rndc freeze so the journal is merged into the zone file before enumerating "
-            "names; the zone is thawed again before nsupdate (frozen zones reject dynamic updates). "
-            "If freeze fails, cleanup continues — AXFR may still list live RRs. "
+            "When enumerating names: if ZONE_CLEANUP_ENUMERATE_VIA_AXFR succeeds, freeze is "
+            "skipped (AXFR already provides a live copy). If AXFR is off or denied, rndc freeze "
+            "merges the journal into the zone file before reading it; thaw runs before nsupdate. "
             "Multi-view: set BIND_KEY_API_ZONE_VIEW. Set BIND_KEY_API_FREEZE_ZONE_STRICT=true "
             "to fail when freeze returns non-zero."
         ),
