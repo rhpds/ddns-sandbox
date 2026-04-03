@@ -132,10 +132,17 @@ def create_app() -> FastAPI:
         lock_path = settings.bind_keys_path.with_name(settings.bind_keys_path.name + ".lock")
         zone_cleanup: ZoneCleanupParams | None = None
         if settings.delete_zone_rrsets_on_key_delete:
-            assert settings.zone_file_path is not None  # enforced by Settings validator
+            zf = (
+                settings.zone_file_path
+                if settings.zone_cleanup_strategy == "enumerate"
+                else None
+            )
+            if settings.zone_cleanup_strategy == "enumerate":
+                assert zf is not None  # enforced by Settings validator
             zone_cleanup = ZoneCleanupParams(
                 zone_name=settings.zone_name,
-                zone_file=settings.zone_file_path,
+                strategy=settings.zone_cleanup_strategy,
+                zone_file=zf,
                 nsupdate_path=settings.nsupdate_path,
                 nsupdate_server=settings.nsupdate_server,
                 nsupdate_port=settings.nsupdate_port,

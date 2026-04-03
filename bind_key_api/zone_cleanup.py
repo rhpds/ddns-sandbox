@@ -1,4 +1,11 @@
-"""Remove DNS RRsets associated with a TSIG key name before the key is removed from disk."""
+"""Remove DNS RRsets associated with a TSIG key name before the key is removed from disk.
+
+Zone cleanup **only** uses `nsupdate` to remove data: each `update delete <owner> ANY` is one
+dynamic update. There is no BIND API to say “delete every RR this TSIG key created” in one
+packet — you must name each owner (apex and/or children). This module either **enumerates**
+owners (zone file + optional AXFR + optional freeze) or, in **nsupdate_key_only** mode, deletes
+**only** RRsets at the TSIG key name itself (not subdomains like api.client.key…).
+"""
 
 from __future__ import annotations
 
@@ -20,8 +27,11 @@ class ZoneCleanupError(RuntimeError):
 
 @dataclass(frozen=True)
 class ZoneCleanupParams:
+    """strategy: enumerate (discover names) or nsupdate_key_only (single delete at key name)."""
+
     zone_name: str
-    zone_file: Path
+    strategy: str
+    zone_file: Path | None
     nsupdate_path: Path
     nsupdate_server: str
     nsupdate_port: int
@@ -162,19 +172,19 @@ def _write_tsig_keyfile(path: Path, tk: TsigKey) -> None:
 
 
 def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
-    """
-    Run nsupdate to delete ANY rrsets at names under this key (selfsub-style).
-    Must be called while the key is still present in named's key file.
-
-    Freeze is best-effort unless freeze_zone_strict: many zones reject freeze (static file,
-    wrong view). AXFR + zone file still enumerate names when freeze is skipped or fails.
-    """
-    zf = params.zone_file
-    if not zf.is_file():
-        raise ZoneCleanupError(f"zone file not found: {zf}")
-
+    """Send `nsupdate` with one `update delete` per owner name (see module docstring)."""
     froze = False
-    try:
+    zf: Path | None = None
+    owners: list[dns.name.Name]
+
+    if params.strategy == "nsupdate_key_only":
+        owners = _sort_deepest_first([dns.name.from_text(tk.name)])
+    else:
+        zf = params.zone_file
+        if zf is None or not zf.is_file():
+            raise ZoneCleanupError(
+                f"zone file not found: {zf!r}" if zf is not None else "zone file path not set"
+            )
         if params.freeze_zone_before:
             try:
                 proc = subprocess.run(
@@ -202,8 +212,8 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                     "or set BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP=false / "
                     "BIND_KEY_API_FREEZE_ZONE_STRICT=false."
                 )
-            # else: best-effort — static zones or wrong view often reject freeze; AXFR still lists live RRs.
 
+    try:
         with tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".key",
@@ -213,26 +223,26 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             kpath = Path(tf.name)
         try:
             _write_tsig_keyfile(kpath, tk)
-
-            axfr_zone: dns.zone.Zone | None = None
-            if params.enumerate_via_axfr:
-                origin = dns.name.from_text(params.zone_name)
-                axfr_zone = _zone_from_axfr(
-                    dig_path=params.dig_path,
-                    zone_name=params.zone_name,
-                    server=params.nsupdate_server,
-                    port=params.nsupdate_port,
-                    keyfile=kpath,
-                    origin=origin,
-                    timeout_sec=params.timeout_sec,
+            if params.strategy != "nsupdate_key_only":
+                assert zf is not None
+                axfr_zone: dns.zone.Zone | None = None
+                if params.enumerate_via_axfr:
+                    origin = dns.name.from_text(params.zone_name)
+                    axfr_zone = _zone_from_axfr(
+                        dig_path=params.dig_path,
+                        zone_name=params.zone_name,
+                        server=params.nsupdate_server,
+                        port=params.nsupdate_port,
+                        keyfile=kpath,
+                        origin=origin,
+                        timeout_sec=params.timeout_sec,
+                    )
+                owners = _collect_owners_for_key(
+                    zf,
+                    params.zone_name,
+                    tk.name,
+                    axfr_zone=axfr_zone,
                 )
-
-            owners = _collect_owners_for_key(
-                zf,
-                params.zone_name,
-                tk.name,
-                axfr_zone=axfr_zone,
-            )
 
             lines = [
                 f"server {params.nsupdate_server} {params.nsupdate_port}",

@@ -17,6 +17,15 @@ def test_zone_cleanup_requires_zone_name_and_file() -> None:
             zone_file_path=Path("/tmp/z.zone"),
         )
 
+    with pytest.raises(ValidationError, match="ZONE_FILE_PATH"):
+        Settings(
+            auth_token="x" * 20,
+            delete_zone_rrsets_on_key_delete=True,
+            zone_name="dyn.redhatworkshops.io",
+            zone_file_path=None,
+            zone_cleanup_strategy="enumerate",
+        )
+
 
 def test_zone_cleanup_rejects_placeholder_zone_name() -> None:
     with pytest.raises(ValidationError, match="ddns.example.com"):
@@ -46,3 +55,14 @@ def test_zone_optional_when_cleanup_disabled() -> None:
         zone_file_path=None,
     )
     assert s.zone_name == ""
+
+
+def test_zone_cleanup_nsupdate_key_only_allows_missing_zone_file() -> None:
+    s = Settings(
+        auth_token="x" * 20,
+        delete_zone_rrsets_on_key_delete=True,
+        zone_name="dyn.redhatworkshops.io",
+        zone_file_path=None,
+        zone_cleanup_strategy="nsupdate_key_only",
+    )
+    assert s.zone_cleanup_strategy == "nsupdate_key_only"

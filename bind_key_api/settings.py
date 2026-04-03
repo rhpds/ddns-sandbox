@@ -4,7 +4,7 @@ import json
 import shlex
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,9 +45,17 @@ class Settings(BaseSettings):
     delete_zone_rrsets_on_key_delete: bool = Field(
         default=False,
         description=(
-            "Before removing a TSIG key, delete DNS names in the zone file that are "
-            "this key name or a subdomain (update-policy selfsub). When true, "
-            "BIND_KEY_API_ZONE_NAME and BIND_KEY_API_ZONE_FILE_PATH are required."
+            "Before removing a TSIG key, run nsupdate to delete RRsets (see ZONE_CLEANUP_STRATEGY). "
+            "When true, BIND_KEY_API_ZONE_NAME is required; ZONE_FILE_PATH is required for "
+            "strategy enumerate only."
+        ),
+    )
+    zone_cleanup_strategy: Literal["enumerate", "nsupdate_key_only"] = Field(
+        default="enumerate",
+        description=(
+            "enumerate: discover owner names (zone file + optional freeze + optional AXFR), "
+            "then nsupdate delete each. nsupdate_key_only: single nsupdate delete at the TSIG "
+            "key name only (no subdomain cleanup; no zone file needed)."
         ),
     )
     zone_name: str = Field(
@@ -157,10 +165,11 @@ class Settings(BaseSettings):
                 "BIND_KEY_API_ZONE_NAME must not be left as the old placeholder "
                 "ddns.example.com; set it to your real zone name."
             )
-        if self.zone_file_path is None:
+        if self.zone_cleanup_strategy == "enumerate" and self.zone_file_path is None:
             raise ValueError(
                 "BIND_KEY_API_ZONE_FILE_PATH must be set to your zone master file "
-                "when BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE is true."
+                "when BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE is true and "
+                "BIND_KEY_API_ZONE_CLEANUP_STRATEGY is enumerate."
             )
         return self
 
