@@ -42,8 +42,20 @@ Environment variables use the prefix **`BIND_KEY_API_`**. The important ones:
 | `BIND_KEY_API_ZONE_FILE_PATH` | Zone master file, used if you enable RRset cleanup on delete. |
 | `BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE` | If `true`, DELETE may remove names in the zone that match the TSIG key name (and subdomains). Set `false` for tests or if you manage the zone elsewhere. |
 | `BIND_KEY_API_NSUPDATE_PATH` | Full path to `nsupdate` (default `/usr/bin/nsupdate`). The Docker image sets `/usr/local/bin/nsupdate` (symlink to wherever `bind9-utils` installs the binary). On RHEL/Fedora hosts, `/usr/sbin/nsupdate` is common. |
+| `BIND_KEY_API_NSUPDATE_SERVER` / `BIND_KEY_API_NSUPDATE_PORT` | Address and port `nsupdate` uses for the dynamic update (default `127.0.0.1:53`). Must reach the **primary** that accepts RFC 2136 updates for this zone. |
 
 Additional options (timeouts, `named` PID file for SIGHUP fallback, view name for `rndc freeze`, etc.) are documented on the **Settings** model in `bind_key_api/settings.py`. A fuller commented example lives in `deploy/bind-key-api.env.example`.
+
+### Zone cleanup (`nsupdate`) and `NOTAUTH`
+
+If DELETE returns **`zone cleanup failed: nsupdate failed: … NOTAUTH`**, BIND rejected the dynamic update. Typical causes:
+
+1. **Wrong target for `nsupdate`** — With **bridge** networking, `127.0.0.1` is the container itself, not `named` on the host. Use **host networking** (`network_mode: host` in Compose), or set **`BIND_KEY_API_NSUPDATE_SERVER`** to the host’s IP (or the DNS master’s IP if it is remote).
+2. **TSIG** — The key name and secret in the managed key file must match what **`named` loads** (same `key "name" { … }` block). Reload/reconfig after key changes.
+3. **`update-policy` / `allow-update`** — The policy must allow this TSIG key to remove the RRsets being deleted (often `grant <key-name> …` for the same name your clients use for DDNS).
+4. **Primary only** — Updates must be sent to the **hidden primary / MNAME** that accepts updates, not to a secondary-only host.
+
+To confirm TSIG and policy, run **`nsupdate -k`** manually with the same key file and a small update script.
 
 ## Run locally (development)
 

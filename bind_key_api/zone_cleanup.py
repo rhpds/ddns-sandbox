@@ -139,7 +139,17 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                 ) from e
             if proc.returncode != 0:
                 msg = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
-                raise ZoneCleanupError(f"nsupdate failed: {msg}")
+                err = f"nsupdate failed: {msg}"
+                combined = msg.upper()
+                if "NOTAUTH" in combined:
+                    err += (
+                        ". NOTAUTH usually means TSIG was rejected, the key is not allowed by "
+                        "update-policy/allow-update for these deletes, or the target is not the "
+                        "primary for this zone. If the API runs in a container without host "
+                        "networking, set BIND_KEY_API_NSUPDATE_SERVER to the host IP that runs "
+                        "named (not 127.0.0.1). Check named logs and test with nsupdate -k manually."
+                    )
+                raise ZoneCleanupError(err)
         finally:
             try:
                 kpath.unlink(missing_ok=True)
