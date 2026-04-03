@@ -57,7 +57,7 @@ On **SELinux** (Fedora), add `:z` or `:Z` to volume mounts if you hit permission
 
 ## Port publishing
 
-With **`--network host`**, the app listens on **`UVICORN_HOST`:`UVICORN_PORT`** (default in **Dockerfile** `0.0.0.0:8080`; **compose** sets `127.0.0.1:8080`).  
+With **`--network host`**, the app listens on **`UVICORN_HOST`:`UVICORN_PORT`** (default **`0.0.0.0:8080`** in **Dockerfile** and **compose.yaml**).  
 If you **do not** use host networking, you must still reach **`named`** for `rndc` (e.g. extra routes or publishing port **953** — not covered here).
 
 ## Root in the container

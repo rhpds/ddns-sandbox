@@ -80,7 +80,7 @@ To run the server against real BIND paths (usually as root or a user with access
 ```bash
 export BIND_KEY_API_BIND_KEYS_PATH=/etc/bind/keys/your-zone.key
 export BIND_KEY_API_RNDC_EXTRA_ARGS='["-k","/etc/bind/rndc.key"]'
-uvicorn bind_key_api.main:app --host 127.0.0.1 --port 8080
+uvicorn bind_key_api.main:app --host 0.0.0.0 --port 8080
 ```
 
 ## Container (Docker / Podman)

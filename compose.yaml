@@ -14,7 +14,7 @@ services:
       - .env
     environment:
       BIND_KEY_API_RNDC_EXTRA_ARGS: '["-k","/etc/rndc.key"]'
-      UVICORN_HOST: 127.0.0.1
+      UVICORN_HOST: 0.0.0.0
       UVICORN_PORT: "8080"
     volumes:
       # Align these host paths with BIND_KEY_API_* in .env
