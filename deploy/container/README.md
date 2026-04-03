@@ -1,6 +1,6 @@
 # Container image (Podman / Docker)
 
-The image includes **Python 3.12**, **pip-installed** `bind-key-api`, and **`bind9-utils`** (`rndc`, `nsupdate`).
+The image includes **Python 3.12**, **pip-installed** `bind-key-api`, **`bind9-utils`** (`rndc`), and **`bind9-dnsutils`** (`nsupdate`). On Debian these are separate packages.
 
 ## Build
 

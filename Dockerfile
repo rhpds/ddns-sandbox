@@ -3,17 +3,15 @@
 
 FROM python:3.12-slim-bookworm AS runtime
 
+# rndc is in bind9-utils; nsupdate is in bind9-dnsutils (Debian split since BIND 9.18 packaging).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bind9-utils \
+        bind9-dnsutils \
     && rm -rf /var/lib/apt/lists/* \
-    && export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    && NSU="$(command -v nsupdate 2>/dev/null || true)" \
-    && if [ -z "$NSU" ]; then \
-         for d in /usr/bin /usr/sbin; do [ -x "$d/nsupdate" ] && NSU="$d/nsupdate" && break; done; \
-       fi \
-    && test -n "$NSU" && test -x "$NSU" \
-    && ln -sf "$NSU" /usr/local/bin/nsupdate
+    && test -x /usr/sbin/rndc \
+    && test -x /usr/bin/nsupdate \
+    && ln -sf /usr/bin/nsupdate /usr/local/bin/nsupdate
 
 WORKDIR /app
 

@@ -9,7 +9,7 @@ Typical use: automate TSIG credentials for clients that update DNS via `nsupdate
 - **BIND 9** (`named`) on the same host or reachable for **`rndc`** (and **`nsupdate`** if you use zone cleanup on DELETE).
 - **`rndc`** authentication (for example `/etc/bind/rndc.key`) so the service can reload configuration after the key file changes.
 - A **writable TSIG key file** path (and directory for the companion lock file `*.key.lock`).
-- **Python 3.11+** for a bare-metal install; the container image bundles **Python 3.12** and **`bind9-utils`**.
+- **Python 3.11+** for a bare-metal install; the container image bundles **Python 3.12**, **`bind9-utils`** (`rndc`), and **`bind9-dnsutils`** (`nsupdate`).
 
 ## HTTP API
 
