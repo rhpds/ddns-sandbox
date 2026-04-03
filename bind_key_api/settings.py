@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,16 +43,26 @@ class Settings(BaseSettings):
         ),
     )
     delete_zone_rrsets_on_key_delete: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Before removing a TSIG key, delete DNS names in the zone file that are "
-            "this key name or a subdomain (update-policy selfsub). Set false for tests."
+            "this key name or a subdomain (update-policy selfsub). When true, "
+            "BIND_KEY_API_ZONE_NAME and BIND_KEY_API_ZONE_FILE_PATH are required."
         ),
     )
-    zone_name: str = Field(default="ddns.example.com")
-    zone_file_path: Path = Field(
-        default=Path("/etc/bind/db.ddns.example.com"),
-        description="Master zone file used to enumerate names to delete (see zone_cleanup).",
+    zone_name: str = Field(
+        default="",
+        description=(
+            "Zone apex exactly as in named.conf (e.g. dyn.redhatworkshops.io). "
+            "Required when DELETE_ZONE_RRSETS_ON_KEY_DELETE is true."
+        ),
+    )
+    zone_file_path: Path | None = Field(
+        default=None,
+        description=(
+            "Master zone file path for enumerating names to delete (see zone_cleanup). "
+            "Required when DELETE_ZONE_RRSETS_ON_KEY_DELETE is true."
+        ),
     )
     nsupdate_server: str = Field(default="127.0.0.1")
     nsupdate_port: int = Field(default=53, ge=1, le=65535)
@@ -64,7 +74,7 @@ class Settings(BaseSettings):
         ),
     )
     zone_view: str | None = Field(
-        default="ddnsinternal",
+        default=None,
         description="BIND view containing the zone (for rndc freeze/thaw if enabled).",
     )
     freeze_zone_before_cleanup: bool = Field(
@@ -101,6 +111,35 @@ class Settings(BaseSettings):
                 pass
             return shlex.split(s)
         raise TypeError("rndc_extra_args must be a list or string")
+
+    @field_validator("zone_file_path", mode="before")
+    @classmethod
+    def _empty_zone_file_path(cls, v: Any) -> Path | None:
+        if v is None or v == "":
+            return None
+        return Path(v)
+
+    @model_validator(mode="after")
+    def _require_zone_identity_when_cleanup_enabled(self) -> Settings:
+        if not self.delete_zone_rrsets_on_key_delete:
+            return self
+        zn = (self.zone_name or "").strip()
+        if not zn:
+            raise ValueError(
+                "BIND_KEY_API_ZONE_NAME must be set to your zone apex from named.conf "
+                "(e.g. dyn.redhatworkshops.io) when BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE is true."
+            )
+        if zn == "ddns.example.com":
+            raise ValueError(
+                "BIND_KEY_API_ZONE_NAME must not be left as the old placeholder "
+                "ddns.example.com; set it to your real zone name."
+            )
+        if self.zone_file_path is None:
+            raise ValueError(
+                "BIND_KEY_API_ZONE_FILE_PATH must be set to your zone master file "
+                "when BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE is true."
+            )
+        return self
 
 
 @lru_cache

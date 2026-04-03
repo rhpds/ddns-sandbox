@@ -39,8 +39,9 @@ Environment variables use the prefix **`BIND_KEY_API_`**. The important ones:
 | `BIND_KEY_API_AUTH_TOKEN` | **Required.** Bearer token (minimum 16 characters). |
 | `BIND_KEY_API_BIND_KEYS_PATH` | Path to the TSIG key file (default in code: `/etc/bind/keys/ddns.example.com.key`). |
 | `BIND_KEY_API_RNDC_EXTRA_ARGS` | Extra `rndc` arguments, often `["-k","/etc/bind/rndc.key"]` as JSON or shell-style. |
-| `BIND_KEY_API_ZONE_FILE_PATH` | Zone master file, used if you enable RRset cleanup on delete. |
-| `BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE` | If `true`, DELETE may remove names in the zone that match the TSIG key name (and subdomains). Set `false` for tests or if you manage the zone elsewhere. |
+| `BIND_KEY_API_ZONE_NAME` | Zone apex **exactly** as in `named.conf` (e.g. `dyn.redhatworkshops.io`). **Required** when `DELETE_ZONE_RRSETS_ON_KEY_DELETE` is `true`. |
+| `BIND_KEY_API_ZONE_FILE_PATH` | Master zone file path on this host. **Required** when zone cleanup on delete is enabled. |
+| `BIND_KEY_API_DELETE_ZONE_RRSETS_ON_KEY_DELETE` | Default `false`. If `true`, DELETE also runs `nsupdate` to remove RRsets for that key; then `ZONE_NAME` and `ZONE_FILE_PATH` must be set (never rely on example defaults). |
 | `BIND_KEY_API_NSUPDATE_PATH` | Full path to `nsupdate` (default `/usr/bin/nsupdate`). The Docker image sets `/usr/local/bin/nsupdate` (symlink to wherever `bind9-utils` installs the binary). On RHEL/Fedora hosts, `/usr/sbin/nsupdate` is common. |
 | `BIND_KEY_API_NSUPDATE_SERVER` / `BIND_KEY_API_NSUPDATE_PORT` | Address and port `nsupdate` uses for the dynamic update (default `127.0.0.1:53`). Must reach the **primary** that accepts RFC 2136 updates for this zone. |
 
