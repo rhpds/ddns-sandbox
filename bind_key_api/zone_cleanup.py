@@ -39,7 +39,14 @@ def _collect_owners_for_key(zone_path: Path, zone_origin: str, key_fqdn: str) ->
     origin = dns.name.from_text(zone_origin)
     keyn = dns.name.from_text(key_fqdn)
     try:
-        z = dns.zone.from_file(str(zone_path), origin=origin, relativize=False)
+        # Dynamic zones often have no SOA in the on-disk file until `rndc freeze` merges
+        # the journal; we only need node names for cleanup, not a full zone audit.
+        z = dns.zone.from_file(
+            str(zone_path),
+            origin=origin,
+            relativize=False,
+            check_origin=False,
+        )
     except Exception as e:
         raise ZoneCleanupError(f"cannot parse zone file {zone_path}: {e}") from e
 
