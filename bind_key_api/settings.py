@@ -86,13 +86,12 @@ class Settings(BaseSettings):
         description="BIND view containing the zone (for rndc freeze/thaw if enabled).",
     )
     freeze_zone_before_cleanup: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "When enumerating names: if ZONE_CLEANUP_ENUMERATE_VIA_AXFR succeeds, freeze is "
-            "skipped (AXFR already provides a live copy). If AXFR is off or denied, rndc freeze "
-            "merges the journal into the zone file before reading it; thaw runs before nsupdate. "
-            "Multi-view: set BIND_KEY_API_ZONE_VIEW. Set BIND_KEY_API_FREEZE_ZONE_STRICT=true "
-            "to fail when freeze returns non-zero."
+            "If true, rndc freeze merges the journal into the zone file when AXFR is off or "
+            "denied — freeze disables dynamic updates and can cause nsupdate REFUSED if thaw fails. "
+            "Default false: use AXFR + zone file only (enable allow-transfer for complete lists). "
+            "When ZONE_CLEANUP_ENUMERATE_VIA_AXFR succeeds, freeze is never used regardless."
         ),
     )
     freeze_zone_strict: bool = Field(
