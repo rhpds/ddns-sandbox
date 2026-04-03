@@ -9,6 +9,29 @@ from bind_key_api.zone_cleanup import (
 )
 
 
+def test_collect_owners_includes_siblings_and_wildcard_under_key(tmp_path: Path) -> None:
+    """api, api2, and *.apps under the same key name must all match (not 'only first' behavior)."""
+    zf = tmp_path / "dyn.zone"
+    zf.write_text(
+        "$TTL 300\n"
+        "$ORIGIN dyn.redhatworkshops.io.\n"
+        "api.agonzalez 300 IN A 192.0.2.1\n"
+        "api2.agonzalez 300 IN A 192.0.2.2\n"
+        "*.apps.agonzalez 300 IN TXT \"x\"\n",
+        encoding="utf-8",
+    )
+    owners = _collect_owners_for_key(
+        zf,
+        "dyn.redhatworkshops.io",
+        "agonzalez.dyn.redhatworkshops.io",
+        axfr_zone=None,
+    )
+    texts = {n.to_text() for n in owners}
+    assert "api.agonzalez.dyn.redhatworkshops.io." in texts
+    assert "api2.agonzalez.dyn.redhatworkshops.io." in texts
+    assert "*.apps.agonzalez.dyn.redhatworkshops.io." in texts
+
+
 def test_collect_owners_without_soa_at_origin(tmp_path: Path) -> None:
     # Mirrors journal-heavy dynamic zones: updates exist but SOA is not in the plain file yet.
     zf = tmp_path / "dyn.example.zone"

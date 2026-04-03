@@ -10,6 +10,7 @@ owners (zone file + optional AXFR + optional freeze) or, in **nsupdate_key_only*
 from __future__ import annotations
 
 import io
+import logging
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -257,6 +258,13 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                         origin=origin,
                         timeout_sec=params.timeout_sec,
                     )
+                    if axfr_zone is None:
+                        logging.getLogger(__name__).warning(
+                            "zone cleanup: AXFR failed or was denied; using zone file only. "
+                            "Names that exist only in the journal (or not in this file path) "
+                            "will be skipped — allow-transfer for this TSIG or fix "
+                            "BIND_KEY_API_ZONE_FILE_PATH."
+                        )
                 owners = _collect_owners_for_key(
                     zf,
                     params.zone_name,
