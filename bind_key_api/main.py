@@ -144,6 +144,7 @@ def create_app() -> FastAPI:
                 rndc_extra_args=settings.rndc_extra_args,
                 zone_view=settings.zone_view,
                 freeze_zone_before=settings.freeze_zone_before_cleanup,
+                freeze_zone_strict=settings.freeze_zone_strict,
                 enumerate_via_axfr=settings.zone_cleanup_enumerate_via_axfr,
                 dig_path=settings.dig_path,
             )

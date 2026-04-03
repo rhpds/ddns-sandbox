@@ -49,7 +49,7 @@ Additional options (timeouts, `named` PID file for SIGHUP fallback, view name fo
 
 ### Zone cleanup: journal vs zone file vs AXFR
 
-Names added only via **dynamic update** often live in the **journal** (`.jnl`) until BIND merges them. Cleanup reads the **zone master file** after **`rndc freeze`** (default **on** via `BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP`). It also merges names from a **`dig … axfr`** of the zone using the same TSIG key (default **on** via `BIND_KEY_API_ZONE_CLEANUP_ENUMERATE_VIA_AXFR`), so whatever **named** is actually serving is included—not only what survived on disk. AXFR requires **`allow-transfer`** (or equivalent) for that key toward `BIND_KEY_API_NSUPDATE_SERVER`; if AXFR is denied, set **`BIND_KEY_API_ZONE_CLEANUP_ENUMERATE_VIA_AXFR=false`** and rely on freeze + file only. Multi-view: set **`BIND_KEY_API_ZONE_VIEW`** if **`rndc freeze`** without a view fails.
+Names added only via **dynamic update** often live in the **journal** (`.jnl`) until BIND merges them. Cleanup **attempts** **`rndc freeze`** first (default **on** via `BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP`). **Freeze often fails** (static master zone, zone in a **view** without `in <view>`, or non-dynamic zone)—by default the API **continues** anyway and uses **`dig … axfr`** plus the zone file (`BIND_KEY_API_ZONE_CLEANUP_ENUMERATE_VIA_AXFR`, default on). Set **`BIND_KEY_API_FREEZE_ZONE_STRICT=true`** only if you want DELETE to **fail** when freeze fails. Multi-view: set **`BIND_KEY_API_ZONE_VIEW`**. AXFR needs **`allow-transfer`** for the TSIG key; if denied, set **`BIND_KEY_API_ZONE_CLEANUP_ENUMERATE_VIA_AXFR=false`**.
 
 ### Zone cleanup (`nsupdate`) and `NOTAUTH`
 

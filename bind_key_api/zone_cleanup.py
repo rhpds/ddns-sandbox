@@ -30,6 +30,7 @@ class ZoneCleanupParams:
     rndc_extra_args: list[str]
     zone_view: str | None
     freeze_zone_before: bool
+    freeze_zone_strict: bool
     enumerate_via_axfr: bool
     dig_path: Path
 
@@ -165,8 +166,8 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
     Run nsupdate to delete ANY rrsets at names under this key (selfsub-style).
     Must be called while the key is still present in named's key file.
 
-    With freeze_zone_before, the journal is merged first so names from dynamic updates
-    are visible in the zone file. Without freeze, only on-disk content is enumerated.
+    Freeze is best-effort unless freeze_zone_strict: many zones reject freeze (static file,
+    wrong view). AXFR + zone file still enumerate names when freeze is skipped or fails.
     """
     zf = params.zone_file
     if not zf.is_file():
@@ -176,7 +177,7 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
     try:
         if params.freeze_zone_before:
             try:
-                subprocess.run(
+                proc = subprocess.run(
                     _rndc_zone_cmd(
                         params.rndc_path,
                         params.rndc_extra_args,
@@ -184,14 +185,24 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                         params.zone_name,
                         params.zone_view,
                     ),
-                    check=True,
+                    check=False,
                     capture_output=True,
                     text=True,
                     timeout=params.timeout_sec,
                 )
+            except subprocess.TimeoutExpired as e:
+                raise ZoneCleanupError(f"rndc freeze timed out: {e}") from e
+            if proc.returncode == 0:
                 froze = True
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                raise ZoneCleanupError(f"rndc freeze failed: {e}") from e
+            elif params.freeze_zone_strict:
+                err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+                raise ZoneCleanupError(
+                    f"rndc freeze failed: {err}. "
+                    "Set BIND_KEY_API_ZONE_VIEW if the zone is in a view, "
+                    "or set BIND_KEY_API_FREEZE_ZONE_BEFORE_CLEANUP=false / "
+                    "BIND_KEY_API_FREEZE_ZONE_STRICT=false."
+                )
+            # else: best-effort — static zones or wrong view often reject freeze; AXFR still lists live RRs.
 
         with tempfile.NamedTemporaryFile(
             mode="w",
