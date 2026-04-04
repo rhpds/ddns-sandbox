@@ -312,6 +312,11 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
             if froze:
                 _rndc_thaw_zone_required(params)
                 froze = False
+            else:
+                # We did not rndc freeze in this request, but the zone may still be frozen
+                # (stuck from an older cleanup, manual freeze, or failed thaw). Unblock nsupdate.
+                _rndc_thaw_zone_best_effort(params)
+                time.sleep(0.15)
 
             lines = [
                 f"server {params.nsupdate_server} {params.nsupdate_port}",
@@ -348,8 +353,8 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                     "REFUSED" in umsg and "frozen" in msg.lower()
                 ):
                     err += (
-                        " (zone was frozen: cleanup thaws before nsupdate in current versions; "
-                        "if you still see this, run rndc thaw manually and retry.)"
+                        " (zone is frozen — run `rndc thaw <zone>` (with `in <view>` if needed) on the "
+                        "BIND host, confirm BIND_KEY_API_RNDC_* reaches that named, then retry.)"
                     )
                 raise ZoneCleanupError(err)
         finally:
