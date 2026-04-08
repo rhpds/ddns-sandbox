@@ -104,10 +104,9 @@ class Settings(BaseSettings):
     zone_cleanup_enumerate_via_axfr: bool = Field(
         default=True,
         description=(
-            "Also list names via `dig … axfr` with the TSIG key (same server/port as nsupdate). "
-            "Catches RRs the on-disk file still does not show after freeze. Requires "
-            "allow-transfer for this key (often already true if the key updates the zone). "
-            "Set false if AXFR is denied and you rely on the zone file only."
+            "Also list names via AXFR (dnspython, same TSIG and BIND_KEY_API_NSUPDATE_SERVER/PORT "
+            "as nsupdate). Catches RRs the on-disk file may not show. Requires allow-transfer for "
+            "this key. Set false to use the zone file only."
         ),
     )
     dig_path: Path = Field(

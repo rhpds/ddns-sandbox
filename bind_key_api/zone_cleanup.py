@@ -10,7 +10,6 @@ or, in **nsupdate_key_only** mode, deletes
 
 from __future__ import annotations
 
-import io
 import logging
 import subprocess
 import tempfile
@@ -19,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import dns.name
+import dns.query
+import dns.tsigkeyring
 import dns.zone
 
 from bind_key_api.tsig import TsigKey
@@ -136,46 +137,40 @@ def _names_matching_key(
 
 def _zone_from_axfr(
     *,
-    dig_path: Path,
     zone_name: str,
     server: str,
     port: int,
-    keyfile: Path,
-    origin: dns.name.Name,
+    tk: TsigKey,
     timeout_sec: float,
 ) -> dns.zone.Zone | None:
-    """Best-effort AXFR using the same TSIG key as nsupdate (needs allow-transfer)."""
-    cmd = [
-        str(dig_path),
-        "+tcp",
-        "+nocmd",
-        "-k",
-        str(keyfile),
-        f"@{server}",
-        "-p",
-        str(port),
-        zone_name,
-        "axfr",
-    ]
+    """AXFR via dnspython (TSIG); needs allow-transfer for this key.
+
+    Using ``dig | dns.zone.from_text`` failed on large zones (parse errors) while BIND logged a
+    successful transfer — wire-format ``from_xfr`` matches what named actually sent.
+    """
+    log = logging.getLogger(__name__)
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
+        keyring = dns.tsigkeyring.from_text({tk.name: (tk.algorithm, tk.secret_b64)})
+        keyname = dns.name.from_text(tk.name)
+    except Exception as e:
+        log.warning("zone cleanup: AXFR TSIG keyring failed: %s", e)
+        return None
+
+    lifetime = max(timeout_sec * 4, 120.0)
+    try:
+        xfr_gen = dns.query.xfr(
+            where=server,
+            zone=zone_name,
+            port=port,
+            keyring=keyring,
+            keyname=keyname,
             timeout=timeout_sec,
-        )
-    except FileNotFoundError:
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        return dns.zone.from_text(
-            io.StringIO(proc.stdout),
-            origin=origin,
+            lifetime=lifetime,
             relativize=False,
-            check_origin=False,
         )
-    except Exception:
+        return dns.zone.from_xfr(xfr_gen, relativize=False, check_origin=False)
+    except Exception as e:
+        log.warning("zone cleanup: AXFR failed: %s", e)
         return None
 
 
@@ -251,22 +246,18 @@ def delete_rrsets_for_tsig_key(tk: TsigKey, params: ZoneCleanupParams) -> None:
                 assert zf is not None
                 axfr_zone: dns.zone.Zone | None = None
                 if params.enumerate_via_axfr:
-                    origin = dns.name.from_text(params.zone_name)
                     axfr_zone = _zone_from_axfr(
-                        dig_path=params.dig_path,
                         zone_name=params.zone_name,
                         server=params.nsupdate_server,
                         port=params.nsupdate_port,
-                        keyfile=kpath,
-                        origin=origin,
+                        tk=tk,
                         timeout_sec=params.timeout_sec,
                     )
                     if axfr_zone is None:
                         logging.getLogger(__name__).warning(
-                            "zone cleanup: AXFR failed or was denied; using zone file only. "
-                            "Names that exist only in the journal (or not in this file path) "
-                            "will be skipped — allow-transfer for this TSIG or fix "
-                            "BIND_KEY_API_ZONE_FILE_PATH."
+                            "zone cleanup: AXFR unavailable; using zone file only for name "
+                            "enumeration (see log lines above; allow-transfer, "
+                            "BIND_KEY_API_NSUPDATE_SERVER/PORT, or BIND_KEY_API_ZONE_FILE_PATH)."
                         )
 
                 # Freeze only when we need a merged on-disk file: not when AXFR already gave a
