@@ -53,11 +53,13 @@ cp .env.example .env
 podman compose up -d --build
 ```
 
+**HTTPS (Caddy, Let’s Encrypt):** set **`CADDY_DOMAIN`** and **`UVICORN_HOST=127.0.0.1`**, then **`podman compose --profile https up -d --build`**. See **`deploy/caddy/README.md`**.
+
 On **SELinux** (Fedora), add `:z` or `:Z` to volume mounts if you hit permission errors.
 
 ## Port publishing
 
-With **`--network host`**, the app listens on **`UVICORN_HOST`:`UVICORN_PORT`** (default **`0.0.0.0:8080`** in **Dockerfile** and **compose.yaml**).  
+With **`--network host`**, the app listens on **`UVICORN_HOST`:`UVICORN_PORT`** (compose defaults **`UVICORN_HOST`** from **`.env`**, else **`0.0.0.0:8080`**). With the **`https`** profile, **Caddy** binds **80** and **443** and proxies to **127.0.0.1:8080**; set **`UVICORN_HOST=127.0.0.1`** so **8080** is not exposed on all interfaces.  
 If you **do not** use host networking, you must still reach **`named`** for `rndc` (e.g. extra routes or publishing port **953** — not covered here).
 
 ## Root in the container

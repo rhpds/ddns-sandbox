@@ -96,6 +96,16 @@ docker compose up -d --build
 
 Compose defaults and volume paths are in **`compose.yaml`**; adjust them to match your host’s BIND layout. More detail (including a `podman run` example and SELinux volume labels) is in **`deploy/container/README.md`**.
 
+### HTTPS with Caddy (Let’s Encrypt, HTTP-01)
+
+Use the **`https`** Compose profile so **[Caddy](https://caddyserver.com/)** terminates TLS on **80/443** and proxies to the API on **127.0.0.1:8080**. In **`.env`** set **`CADDY_DOMAIN`** to the public DNS name (A/AAAA records must point at this host) and **`UVICORN_HOST=127.0.0.1`** so the API is not exposed on **8080** beyond localhost. Open **80** and **443** to the internet for ACME HTTP-01. Then:
+
+```bash
+docker compose --profile https up -d --build
+```
+
+See **`deploy/caddy/README.md`** for details and optional ACME email.
+
 ## Production install (systemd)
 
 For a venv under `/opt` and a **systemd** unit, see **`deploy/README.md`**:
@@ -111,5 +121,5 @@ sudo systemctl enable --now bind-key-api
 | Path | Role |
 |------|------|
 | `bind_key_api/` | FastAPI app, TSIG parse/serialize, locked key-file store, zone cleanup, reload logic. |
-| `deploy/` | systemd install scripts, env example, container notes. |
+| `deploy/` | systemd install scripts, env example, **Caddy** HTTPS profile, container notes. |
 | `tests/` | Pytest suite. |

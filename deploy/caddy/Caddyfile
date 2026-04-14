@@ -1,0 +1,6 @@
+# HTTP-01: Caddy obtains and renews Let's Encrypt certificates automatically.
+# Requirements: CADDY_DOMAIN DNS A/AAAA → this host; ports 80 and 443 reachable from the internet.
+
+{$CADDY_DOMAIN} {
+	reverse_proxy 127.0.0.1:8080
+}

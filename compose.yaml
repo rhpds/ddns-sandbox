@@ -3,6 +3,9 @@
 #
 # Copy .env.example -> .env and set BIND_KEY_API_AUTH_TOKEN, zone name, paths, and volumes
 # to match your host (see .env.example). Uses host network so rndc reaches named on 127.0.0.1:953.
+#
+# HTTPS (Caddy, Let's Encrypt HTTP-01):  docker compose --profile https up -d --build
+# Set CADDY_DOMAIN and UVICORN_HOST=127.0.0.1 in .env (see .env.example).
 
 services:
   bind-key-api:
@@ -14,7 +17,7 @@ services:
       - .env
     environment:
       BIND_KEY_API_RNDC_EXTRA_ARGS: '["-k","/etc/rndc.key"]'
-      UVICORN_HOST: 0.0.0.0
+      UVICORN_HOST: ${UVICORN_HOST:-0.0.0.0}
       UVICORN_PORT: "8080"
     volumes:
       # Align these host paths with BIND_KEY_API_* in .env
@@ -23,3 +26,22 @@ services:
       - /etc/rndc.key:/etc/rndc.key:ro
       - /run/named:/run/named
     restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    network_mode: host
+    profiles:
+      - https
+    depends_on:
+      - bind-key-api
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
